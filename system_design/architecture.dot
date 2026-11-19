@@ -1,0 +1,90 @@
+// Multi-Agent RAG — system design
+// Render: dot -Tsvg architecture.dot -o architecture.svg && dot -Tpng -Gdpi=150 architecture.dot -o architecture.png
+digraph MultiAgentRAG {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=12, nodesep=0.45, ranksep=0.6,
+         label="Multi-Agent RAG over PDFs — System Design", labelloc=t, fontsize=20, pad=0.4, compound=true];
+  node  [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", fillcolor="#ffffff", color="#555555"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  // ---------------- OFFLINE: INGESTION ----------------
+  subgraph cluster_ingest {
+    label="OFFLINE — Ingestion pipeline\n(python -m src.ingestion.ingest [--reset])";
+    style="rounded,filled"; fillcolor="#eef5ff"; color="#7aa7e0"; fontsize=13;
+
+    pdfs     [label="data/*.pdf\n10 PDFs · 107 pages\n(5 policy, 5 transcripts)", shape=folder, fillcolor="#fff7e0"];
+    loader   [label="Loader\nloader.py\npypdf · text per page\n(skip empty pages, no OCR)"];
+    classify [label="Doc Classifier\ndoc_classifier.py\nfilename regex\n→ doc_type, client_name"];
+    chunker  [label="Chunker\nchunker.py\nparagraph → sentence → hard cut\npolicy 1000/200 · transcript 500/100\nper-page · id = file::pN::cM"];
+    embedD   [label="Embed (batch 64, concurrent)\ntask_type=RETRIEVAL_DOCUMENT\n768-d · L2-normalized"];
+
+    pdfs -> loader -> classify -> chunker -> embedD;
+  }
+
+  // ---------------- STORAGE ----------------
+  subgraph cluster_store {
+    label="Vector store (local, persistent)";
+    style="rounded,filled"; fillcolor="#eefaf0"; color="#6cbf7f"; fontsize=13;
+    chroma [label="ChromaDB  ·  storage/\ncollection: pdf_chunks\nHNSW · cosine space\n354 chunks\n{embedding, text, metadata:\n source_file, page_number,\n chunk_index, doc_type, client_name}",
+            shape=cylinder, fillcolor="#d9f2df"];
+  }
+
+  // ---------------- EXTERNAL ----------------
+  subgraph cluster_ext {
+    label="External — Google Gemini API (via src/llm/gemini_client.py)";
+    style="rounded,filled"; fillcolor="#fdf0f0"; color="#e08a8a"; fontsize=13;
+    gemEmbed [label="gemini-embedding-001\nembed_content()", fillcolor="#fbdede"];
+    gemGen   [label="gemini-3.6-flash\ngenerate_content()\n(JSON mode for Router/Critic)", fillcolor="#fbdede"];
+  }
+
+  // ---------------- ONLINE: QUERY ----------------
+  subgraph cluster_query {
+    label="ONLINE — Query pipeline (python cli.py \"question\")";
+    style="rounded,filled"; fillcolor="#f5f0ff"; color="#a58be0"; fontsize=13;
+
+    user   [label="User\n(CLI / REPL)", shape=oval, fillcolor="#fff7e0"];
+    orch   [label="Orchestrator\norchestrator.py\nonly component that knows the sequence\nbounded retry ≤ MAX_CRITIC_RETRIES (1)", fillcolor="#e6dcff", penwidth=2];
+    state  [label="Shared State (blackboard)\nstate.py\nquery · plan · sub_queries · client_name_filter\nretrieved_chunks · low_confidence\nanswer · critique · retry_count · trace[]",
+            shape=note, fillcolor="#fffbe6"];
+
+    router [label="① Router / Planner Agent\nrouter.py · temp 0 · JSON\nNO_ / SINGLE_ / MULTI_RETRIEVAL\n≤3 sub-queries · client_name (roster-validated)\nfallback → SINGLE on raw query"];
+    retr   [label="② Retriever Agent\nretriever.py\nembed each sub-query (RETRIEVAL_QUERY)\nChroma top-5 each (+ where client_name)\nmerge · dedupe (max score) · top-8\nlow_confidence if <2 chunks ≥ 0.5"];
+    synth  [label="③ Synthesis Agent\nsynthesizer.py · temp 0.2\ngrounded prompt · cite [n]\n+ hedge addendum if low_confidence\nno chunks → general-knowledge mode"];
+    critic [label="④ Critic / Verifier Agent\ncritic.py · temp 0 · JSON\nSUPPORTED / PARTIALLY / UNSUPPORTED\n+ suggested_followup_query"];
+    out    [label="Output\ntrace · chunks+scores\nverdict · answer", shape=oval, fillcolor="#fff7e0"];
+
+    user -> orch [label="query"];
+    orch -> router [label="1"];
+    router -> retr [label="2  plan ≠ NO_RETRIEVAL"];
+    router -> synth [label="NO_RETRIEVAL", style=dashed];
+    retr -> synth [label="3"];
+    synth -> critic [label="4  (skip: --no-critic)"];
+    critic -> retr [label="not SUPPORTED\n+ followup query\n+ retries left\n→ sub_queries=[followup]", color="#c0392b", fontcolor="#c0392b", style=bold, constraint=false];
+    critic -> out [label="SUPPORTED or\nretries exhausted"];
+
+    // agents read/write the State
+    {router retr synth critic} -> state [style=dotted, arrowhead=none, color="#b8a400"];
+  }
+
+  // ---------------- CROSS-CLUSTER EDGES ----------------
+  embedD -> gemEmbed [style=dashed, label="API"];
+  embedD -> chroma   [label="add(ids, embeddings,\ndocuments, metadatas)", penwidth=2, color="#2e8b57"];
+  retr   -> gemEmbed [style=dashed, label="API"];
+  retr   -> chroma   [label="query(embedding, top_k, where)", penwidth=2, color="#2e8b57"];
+  router -> gemGen   [style=dashed];
+  synth  -> gemGen   [style=dashed];
+  critic -> gemGen   [style=dashed];
+  classify -> router [label="known_client_roster()\n(scans data/ filenames)", style=dashed, color="#7aa7e0", fontcolor="#3b6fb6"];
+
+  // ---------------- LEGEND ----------------
+  legend [shape=plaintext, fillcolor="none", label=<
+    <table border="1" cellborder="0" cellspacing="2" cellpadding="3" bgcolor="#ffffff" color="#999999">
+      <tr><td colspan="2"><b>Legend</b></td></tr>
+      <tr><td align="left">──── solid</td><td align="left">data / control flow</td></tr>
+      <tr><td align="left">- - - dashed</td><td align="left">external API call / config lookup</td></tr>
+      <tr><td align="left"><font color="#c0392b">━━━ red bold</font></td><td align="left">corrective retry loop (max 1)</td></tr>
+      <tr><td align="left"><font color="#b8a400">····· dotted</font></td><td align="left">agent reads/writes shared State</td></tr>
+      <tr><td align="left"><font color="#2e8b57">━━━ green</font></td><td align="left">vector store I/O</td></tr>
+      <tr><td align="left" colspan="2">Calls/query: 4–6 (up to 9 with retry)</td></tr>
+      <tr><td align="left" colspan="2">Not present: BM25/hybrid, reranker, cache, memory</td></tr>
+    </table>>];
+}
