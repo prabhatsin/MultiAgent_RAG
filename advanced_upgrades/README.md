@@ -19,9 +19,9 @@ Status: 💡 idea · 🚧 in progress · ✅ done
 | 01 | Evaluation harness (golden Q&A set, faithfulness/recall metrics) | Quality  | 💡 |
 | 02 | Hybrid search (BM25 + dense) with Reciprocal Rank Fusion   | Retrieval     | 💡 |
 | 03 | Cross-encoder / LLM reranking of retrieved chunks          | Retrieval     | 💡 |
-| 04 | Semantic + structure-aware chunking (headings, tables)     | Ingestion     | 💡 |
-| 05 | Metadata filtering via router (doc type, person, date)     | Agents        | 💡 |
-| 06 | Parallel sub-query retrieval with `asyncio.gather`         | Performance   | 💡 |
+| 04 | Contextual chunk headers + `section_title` metadata        | Ingestion     | 💡 |
+| 05 | PageIndex tree retrieval for the 63-page Standards doc     | Retrieval     | 💡 |
+| 06 | Extend router filters beyond client (doc_type, date)       | Agents        | 💡 |
 | 07 | Query rewriting / HyDE for vague questions                 | Retrieval     | 💡 |
 | 08 | Claim-level critic with per-sentence citations             | Agents        | 💡 |
 | 09 | Conversation memory (multi-turn follow-ups)                | Agents        | 💡 |
@@ -31,6 +31,11 @@ Status: 💡 idea · 🚧 in progress · ✅ done
 | 13 | FastAPI service with streaming responses                   | Serving       | 💡 |
 | 14 | Guardrails: prompt-injection detection, PII redaction      | Safety        | 💡 |
 | 15 | Docker + CI (lint, tests, eval regression gate)            | Ops           | 💡 |
+
+See `TOPIC_FIT_MAP.md` for where BM25, RRF, reranking, PageIndex and
+AST autodiscovery fit (or don't) in this codebase.
+
+Already in the base system: client-name metadata filtering, parallel sub-query retrieval.
 
 Suggested order: start with **01** — every later upgrade is more convincing
 when you can show a metric moving.
