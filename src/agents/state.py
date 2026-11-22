@@ -29,6 +29,13 @@ class Critique:
 
 
 @dataclass
+class AnswerGrade:
+    verdict: str  # FULLY_ANSWERED | PARTIALLY_ANSWERED | NOT_ANSWERED
+    explanation: str
+    suggested_followup_query: str | None = None
+
+
+@dataclass
 class State:
     query: str
 
@@ -41,6 +48,7 @@ class State:
 
     answer: str = ""
     critique: Critique | None = None
+    answer_grade: AnswerGrade | None = None  # set only when critique is SUPPORTED
 
     retry_count: int = 0
     trace: list[AgentEvent] = field(default_factory=list)

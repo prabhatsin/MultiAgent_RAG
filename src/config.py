@@ -36,6 +36,8 @@ EMBEDDING_DIM = 768  # output_dimensionality requested from the embedding model
 # to gemini-3.6-flash as the current equivalent.
 GENERATION_MODEL = "gemini-3.6-flash"
 ROUTER_MODEL = "gemini-3.6-flash"
+RELEVANCE_GRADER_MODEL = "gemini-3.6-flash"
+ANSWER_GRADER_MODEL = "gemini-3.6-flash"
 
 # --- Chunking (content-aware: policy docs vs. client transcripts) -----------
 POLICY_CHUNK_SIZE_CHARS = 1000
@@ -48,6 +50,7 @@ TRANSCRIPT_CHUNK_OVERLAP_CHARS = 100
 # --- Retrieval ---------------------------------------------------------------
 TOP_K = 5
 MAX_SUB_QUERIES = 3
+# Total retry budget, shared by Critic and Answer Grader follow-ups.
 MAX_CRITIC_RETRIES = 1
 MAX_CONTEXT_CHUNKS = 8  # cap on total chunks fed to the Synthesis Agent
 

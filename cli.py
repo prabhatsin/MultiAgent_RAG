@@ -4,6 +4,8 @@
 Usage:
     python cli.py "What are the check-in guidelines?"
     python cli.py --no-critic "What are the check-in guidelines?"
+    python cli.py --no-grader "What are the check-in guidelines?"
+    python cli.py --no-answer-grader "What are the check-in guidelines?"
     python cli.py                     # interactive REPL
 """
 
@@ -53,6 +55,9 @@ def print_critique(state: State) -> None:
     print(_SEP)
     print(f"verdict: {state.critique.verdict}")
     print(f"explanation: {state.critique.explanation}")
+    if state.answer_grade is not None:
+        print(f"answer grade: {state.answer_grade.verdict}")
+        print(f"answer grade explanation: {state.answer_grade.explanation}")
     if state.retry_count:
         print(f"retries used: {state.retry_count}")
     print()
@@ -98,9 +103,23 @@ def main() -> None:
         action="store_true",
         help="Skip the Critique/Verifier Agent for a faster response.",
     )
+    parser.add_argument(
+        "--no-grader",
+        action="store_true",
+        help="Skip the Relevance Grader Agent and pass all retrieved chunks to synthesis.",
+    )
+    parser.add_argument(
+        "--no-answer-grader",
+        action="store_true",
+        help="Skip the Answer Grader Agent (whether a supported answer fully answers the question).",
+    )
     args = parser.parse_args()
 
-    orchestrator = Orchestrator(use_critic=not args.no_critic)
+    orchestrator = Orchestrator(
+        use_critic=not args.no_critic,
+        use_grader=not args.no_grader,
+        use_answer_grader=not args.no_answer_grader,
+    )
 
     if args.question:
         asyncio.run(ask(orchestrator, args.question))
